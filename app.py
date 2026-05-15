@@ -206,7 +206,7 @@ if menu == "🏠 Project Overview":
 
     st.title(data.get("home_title", "PRAN"))
 
-    st.image(data.get("hero_image", ""), use_container_width=True)
+    st.image(data.get("hero_image", ""), width="stretch")
 
     st.write(data.get("home_text", ""))
 
@@ -313,6 +313,6 @@ elif menu == "Admin Dashboard":
         else:
             display_data = existing_data
 
-        st.dataframe(display_data, use_container_width=True, hide_index=True)
+        st.dataframe(display_data, width="stretch", hide_index=True)
     else:
         st.info("The central spreadsheet tracker database is currently empty.")
