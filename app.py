@@ -1,11 +1,22 @@
 from datetime import date
+from pathlib import Path
+from uuid import uuid4
 
 import pandas as pd
 import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 
 
-COLUMNS = ["Date", "Teacher", "School", "District", "Category", "Summary"]
+COLUMNS = [
+    "Date",
+    "Teacher_Name",
+    "School_Name",
+    "District",
+    "Category",
+    "Summary",
+    "Recommendations",
+    "Uploaded_File",
+]
 DISTRICTS = ["District A", "District B", "District C"]
 ACTIVITY_CATEGORIES = [
     "Physical Activity Everyday",
@@ -15,6 +26,7 @@ ACTIVITY_CATEGORIES = [
     "Saying No to Tobacco & Alcohol",
     "Home-based Activity with Parents",
 ]
+UPLOAD_DIR = Path("uploads")
 
 
 st.set_page_config(
@@ -75,6 +87,21 @@ def save_activity(
 ) -> None:
     updated_df = pd.concat([existing_data, new_row], ignore_index=True)
     conn.update(data=updated_df)
+
+
+def save_uploaded_file(uploaded_file) -> str:
+    if uploaded_file is None:
+        return ""
+
+    UPLOAD_DIR.mkdir(exist_ok=True)
+    safe_name = Path(uploaded_file.name).name
+    file_name = f"{uuid4().hex}_{safe_name}"
+    file_path = UPLOAD_DIR / file_name
+
+    with open(file_path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
+
+    return file_name
 
 
 def admin_password_is_valid() -> bool:
@@ -149,34 +176,42 @@ elif mode == "Teacher Entry Panel":
         district = st.selectbox("District Name", DISTRICTS)
         activity_category = st.selectbox("Activity Category", ACTIVITY_CATEGORIES)
         summary = st.text_area("Brief summary of session outcomes")
+        recommendations = st.text_area("Recommendations")
+        uploaded_file = st.file_uploader(
+            "Upload Activity Evidence",
+            type=["jpg", "jpeg", "png", "pdf", "mp4"],
+        )
 
-        if st.form_submit_button("Submit Logs to Admin"):
-            if teacher_name.strip() and school_name.strip() and summary.strip():
-                new_row = pd.DataFrame(
-                    [
+        submitted = st.form_submit_button("Submit Entry")
+
+    if submitted:
+        if teacher_name.strip() and school_name.strip() and summary.strip():
+            file_name = save_uploaded_file(uploaded_file)
+            new_row = pd.DataFrame(
+                [
                         {
                             "Date": str(date.today()),
-                            "Teacher": teacher_name.strip(),
-                            "School": school_name.strip(),
+                            "Teacher_Name": teacher_name.strip(),
+                            "School_Name": school_name.strip(),
                             "District": district,
                             "Category": activity_category,
-                            "Summary": summary.strip(),
-                        }
-                    ]
-                )
+                        "Summary": summary.strip(),
+                        "Recommendations": recommendations.strip(),
+                        "Uploaded_File": file_name,
+                    }
+                ]
+            )
 
-                try:
-                    save_activity(conn, existing_data, new_row)
-                except Exception as exc:
-                    st.error("Could not save the activity to Google Sheets.")
-                    st.exception(exc)
-                else:
-                    st.balloons()
-                    st.success(
-                        f"Excellent work, {teacher_name.strip()}! Data synced."
-                    )
+            try:
+                save_activity(conn, existing_data, new_row)
+            except Exception as exc:
+                st.error("Could not save the activity to Google Sheets.")
+                st.exception(exc)
             else:
-                st.error("Please complete all required text fields before submitting.")
+                st.balloons()
+                st.success(f"Excellent work, {teacher_name.strip()}! Data synced.")
+        else:
+            st.error("Please complete all required text fields before submitting.")
 
 elif mode == "Admin Dashboard":
     st.header("Admin Security Verification")
