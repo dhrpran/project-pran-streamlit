@@ -3,7 +3,10 @@ from pathlib import Path
 from uuid import uuid4
 
 import pandas as pd
+import plotly.express as px
+import requests
 import streamlit as st
+from PIL import Image
 from streamlit_gsheets import GSheetsConnection
 
 
@@ -27,32 +30,49 @@ ACTIVITY_CATEGORIES = [
     "Home-based Activity with Parents",
 ]
 UPLOAD_DIR = Path("uploads")
+API = "http://127.0.0.1:8000/content"
+DEFAULT_CONTENT = {
+    "home_title": "Project PRAN",
+    "home_text": "Preventing Risk Factors Among Adolescents for Noncommunicable Diseases",
+    "hero_image": "https://images.unsplash.com/photo-1576091160550-2173dba999ef",
+    "schools": 124,
+    "students": 18450,
+    "districts": 12,
+    "activities": 540,
+}
 
 
 st.set_page_config(
-    page_title="Project PRAN Portal",
-    page_icon=":material/health_and_safety:",
+    page_title="Project PRAN",
+    page_icon="🩺",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
 
 st.markdown(
     """
     <style>
-    .stApp { background-color: #f4f9f4; }
-    h1, h2, h3 { color: #1b5e20; font-family: Arial, sans-serif; }
-    [data-testid="stSidebar"] { background-color: #ffffff; }
-    .stButton>button {
-        background-color: #2e7d32;
-        color: white;
-        border-radius: 12px;
-        font-weight: bold;
-        width: 100%;
+
+    .main {
+        background-color: #f4f9f4;
     }
-    .stButton>button:hover {
+
+    .stButton>button {
         background-color: #1b5e20;
         color: white;
-        border-color: #1b5e20;
+        border-radius: 10px;
+        height: 3em;
+        width: 100%;
+        font-size: 16px;
     }
+
+    .metric-card {
+        background-color: white;
+        padding: 20px;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
     </style>
     """,
     unsafe_allow_html=True,
@@ -87,6 +107,56 @@ def save_activity(
 ) -> None:
     updated_df = pd.concat([existing_data, new_row], ignore_index=True)
     conn.update(data=updated_df)
+
+
+@st.cache_data(ttl=30)
+def load_data() -> dict:
+    return requests.get(API, timeout=3).json()
+
+
+def load_home_content() -> dict:
+    try:
+        return load_data()
+    except requests.RequestException:
+        return DEFAULT_CONTENT
+
+
+def render_admin_content_editor() -> None:
+    data = load_home_content()
+
+    st.subheader("Admin Content Editor")
+
+    title = st.text_input("Title", value=data["home_title"])
+    text = st.text_input("Text", value=data["home_text"])
+    img = st.text_input("Image URL", value=data["hero_image"])
+
+    schools = st.number_input("Schools", min_value=0, value=int(data["schools"]))
+    students = st.number_input("Students", min_value=0, value=int(data["students"]))
+    districts = st.number_input("Districts", min_value=0, value=int(data["districts"]))
+    activities = st.number_input("Activities", min_value=0, value=int(data["activities"]))
+
+    if st.button("Update Backend"):
+        payload = {
+            "home_title": title,
+            "home_text": text,
+            "hero_image": img,
+            "schools": schools,
+            "students": students,
+            "districts": districts,
+            "activities": activities,
+        }
+
+        try:
+            response = requests.post(API, json=payload, timeout=3)
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            st.error("Could not update backend content.")
+            st.exception(exc)
+            return
+
+        st.cache_data.clear()
+        st.success("Updated successfully!")
+        st.rerun()
 
 
 def save_uploaded_file(uploaded_file) -> str:
@@ -126,47 +196,58 @@ conn = get_connection()
 existing_data = read_sheet(conn)
 
 st.sidebar.title("Project PRAN Menu")
-mode = st.sidebar.selectbox(
+menu = st.sidebar.selectbox(
     "Go to page:",
-    ["Project Overview", "Teacher Entry Panel", "Admin Dashboard"],
+    ["🏠 Project Overview", "Teacher Entry Panel", "Admin Dashboard"],
 )
 
-if mode == "Project Overview":
-    st.markdown(
-        "<h1 style='text-align: center;'>Project PRAN Portal</h1>",
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        "<p style='text-align: center; font-size: 18px; color: #555;'>"
-        "Preventing Risk Factors Among Adolescents for Noncommunicable Diseases"
-        "</p>",
-        unsafe_allow_html=True,
-    )
-    st.divider()
+if menu == "🏠 Project Overview":
+    data = load_home_content()
 
-    col1, col2 = st.columns(2)
+    st.title(data.get("home_title", "PRAN"))
+
+    st.image(data.get("hero_image", ""), use_container_width=True)
+
+    st.write(data.get("home_text", ""))
+
+    st.markdown("---")
+
+    col1, col2, col3, col4 = st.columns(4)
+
     with col1:
-        st.subheader("Our Intervention Objective")
-        st.write(
-            """
-            Project PRAN is an active school health roadmap deployed across **3 districts**.
-            We empower teachers to build adolescent knowledge, positive attitudes, and
-            self-efficacy across critical behavioral risk factors:
+        st.metric("Schools", data.get("schools", 0))
 
-            * **Physical Activity:** Incorporating structured movement daily.
-            * **Dietary Literacy:** Building healthy meal plates, understanding nutritional values, and refusing junk foods.
-            * **Substance Prevention:** Confidently saying no to tobacco and alcohol.
-            * **Home Integration:** Completing family health assignments alongside parents.
-            """
-        )
     with col2:
-        st.info(
-            "**Scope:** 3 Monitoring Districts\n\n"
-            "**Metric:** Knowledge, Attitude & Practice (KAP)\n\n"
-            "**Database:** Live Cloud Spreadsheet Syncing"
-        )
+        st.metric("Students", data.get("students", 0))
 
-elif mode == "Teacher Entry Panel":
+    with col3:
+        st.metric("Districts", data.get("districts", 0))
+
+    with col4:
+        st.metric("Activities", data.get("activities", 0))
+
+    st.markdown("---")
+
+    st.info(
+        "Project PRAN is a school-based public health initiative "
+        "focused on reducing adolescent risk factors for "
+        "noncommunicable diseases."
+    )
+
+    st.markdown("## 🎯 Key Objectives")
+
+    st.write("✅ Promote healthy lifestyle awareness")
+    st.write("✅ Reduce adolescent NCD risk factors")
+    st.write("✅ Strengthen school health systems")
+    st.write("✅ Monitor district-level interventions")
+
+    st.markdown("---")
+
+    st.success(
+        "Welcome to the centralized PRAN digital monitoring platform."
+    )
+
+elif menu == "Teacher Entry Panel":
     st.header("Submit School Activity Proof")
     st.write("Teachers: Fill out this reporting form after conducting your session.")
 
@@ -213,11 +294,14 @@ elif mode == "Teacher Entry Panel":
         else:
             st.error("Please complete all required text fields before submitting.")
 
-elif mode == "Admin Dashboard":
+elif menu == "Admin Dashboard":
     st.header("Admin Security Verification")
 
     if not admin_password_is_valid():
         st.stop()
+
+    st.divider()
+    render_admin_content_editor()
 
     st.divider()
     st.subheader("Multi-District Central Activity Stream")

@@ -1,3 +1,10 @@
 streamlit
 pandas
+plotly
+pillow
+requests
 st-gsheets-connection
+fastapi
+uvicorn
+python-multipart
+sqlalchemy
